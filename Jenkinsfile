@@ -117,7 +117,7 @@ pipeline {
           steps {
             catchError(stageResult: 'FAILURE') {
               withMaven(jdk: 'jdk-8-latest', maven: 'maven-3.2-latest', mavenSettingsConfig: 'camunda-maven-settings', options: [artifactsPublisher(disabled: true), junitPublisher(disabled: true)]) {
-                runMaven(true, false, false, 'engine/', ' test -Pdatabase,h2')
+                runMaven(true, false, false, getMavenProfileDir('engine-unit'), getMavenProfileCmd('engine-unit') + getDbProfiles('h2'))
               }
             }
           }
@@ -150,7 +150,7 @@ pipeline {
           steps {
             catchError(stageResult: 'FAILURE') {
               withMaven(jdk: 'jdk-8-latest', maven: 'maven-3.2-latest', mavenSettingsConfig: 'camunda-maven-settings', options: [artifactsPublisher(disabled: true), junitPublisher(disabled: true)]) {
-                runMaven(true, false, false, 'engine/', 'test -Pdatabase,h2,cfgAuthorizationCheckRevokesAlways')
+                runMaven(true, false, false, getMavenProfileDir('engine-unit-authorizations'), getMavenProfileCmd('engine-unit-authorizations') + getDbProfiles('h2'))
               }
             }
           }
@@ -243,7 +243,7 @@ pipeline {
           steps {
             catchError(stageResult: 'FAILURE') {
               withMaven(jdk: 'jdk-8-latest', maven: 'maven-3.2-latest', mavenSettingsConfig: 'camunda-maven-settings', options: [artifactsPublisher(disabled: true), junitPublisher(disabled: true)]) {
-                runMaven(true, false, false, 'webapps/', 'clean test -Pdatabase,h2 -Dskip.frontend.build=true')
+                runMaven(true, false, false, getMavenProfileDir('webapps-unit'), getMavenProfileCmd('webapps-unit') + getDbProfiles('h2'))
               }
             }
           }
@@ -256,7 +256,40 @@ pipeline {
             }
           }
         }
-        stage('engine-IT-tomcat-9-h2') {// TODO change it to `postgresql-96`
+        stage('webapp-UNIT-authorizations-h2') {
+          when {
+            anyOf {
+              branch 'pipeline-master';
+              allOf {
+                changeRequest();
+                expression {
+                  withLabels('webapps')
+                }
+              }
+            }
+          }
+          agent {
+            kubernetes {
+              yaml getAgent()
+            }
+          }
+          steps {
+            catchError(stageResult: 'FAILURE') {
+              withMaven(jdk: 'jdk-8-latest', maven: 'maven-3.2-latest', mavenSettingsConfig: 'camunda-maven-settings', options: [artifactsPublisher(disabled: true), junitPublisher(disabled: true)]) {
+                runMaven(true, false, false, getMavenProfileDir('webapps-unit-authorizations'), getMavenProfileCmd('webapps-unit-authorizations') + getDbProfiles('h2'))
+              }
+            }
+          }
+          post {
+            always {
+              junit testResults: '**/target/*-reports/TEST-*.xml', keepLongStdio: true
+            }
+            failure {
+              addFailedStageType(failedStageTypes, 'webapps-unit-authorizations')
+            }
+          }
+        }
+        stage('engine-IT-tomcat-9-postgresql-96') {
           when {
             anyOf {
               branch 'pipeline-master';
@@ -270,13 +303,13 @@ pipeline {
           }
           agent {
             kubernetes {
-              yaml getAgent()
+              yaml getDbAgent('postgresql_96')
             }
           }
           steps {
             catchError(stageResult: 'FAILURE') {
               withMaven(jdk: 'jdk-8-latest', maven: 'maven-3.2-latest', mavenSettingsConfig: 'camunda-maven-settings', options: [artifactsPublisher(disabled: true), junitPublisher(disabled: true)]) {
-                runMaven(true, true, false, 'qa/', 'clean install -Ptomcat,h2,engine-integration')
+                runMaven(true, true, false, 'qa/', 'clean install -Ptomcat,postgresql,engine-integration')
               }
             }
           }
@@ -286,6 +319,39 @@ pipeline {
             }
             failure {
               addFailedStageType(failedStageTypes, 'engine-IT')
+            }
+          }
+        }
+        stage('engine-IT-wildfly-postgresql-96') {
+          when {
+            anyOf {
+              branch 'pipeline-master';
+              allOf {
+                changeRequest();
+                expression {
+                  withLabels('IT')
+                }
+              }
+            }
+          }
+          agent {
+            kubernetes {
+              yaml getDbAgent('postgresql_96')
+            }
+          }
+          steps {
+            catchError(stageResult: 'FAILURE') {
+              withMaven(jdk: 'jdk-8-latest', maven: 'maven-3.2-latest', mavenSettingsConfig: 'camunda-maven-settings', options: [artifactsPublisher(disabled: true), junitPublisher(disabled: true)]) {
+                runMaven(true, true, false, 'qa/', 'clean install -Pwildfly,postgresql,engine-integration')
+              }
+            }
+          }
+          post {
+            always {
+              junit testResults: '**/target/*-reports/TEST-*.xml', keepLongStdio: true
+            }
+            failure {
+              addFailedStageType(failedStageTypes, 'engine-IT-wildfly')
             }
           }
         }
@@ -427,16 +493,18 @@ pipeline {
           }
         }
         when {
-          anyOf {
-            branch 'pipeline-master';
+          allOf {
             expression {
               skipStageType(failedStageTypes, env.PROFILE)
             }
-            allOf {
-              changeRequest();
-//              expression {
-//                withLabels("all-db") || withDbLabel(env.DB)
-//              }
+            anyOf {
+              branch 'pipeline-master';
+              allOf {
+                changeRequest();
+                expression {
+                  withLabels("all-db", getDbType(env.DB))
+                }
+              }
             }
           }
         }
@@ -467,6 +535,22 @@ pipeline {
     stage('db tests + CE webapps IT') {
       parallel {
         stage('engine-api-compatibility') {
+          when {
+            allOf {
+              expression {
+                skipStageType(failedStageTypes, 'engine-unit')
+              }
+              anyOf {
+                branch 'pipeline-master';
+                allOf {
+                  changeRequest();
+                  expression {
+                    withLabels('h2')
+                  }
+                }
+              }
+            }
+          }
           agent {
             kubernetes {
               yaml getAgent('gcr.io/ci-30-162810/centos:v0.4.6', 16)
@@ -486,6 +570,22 @@ pipeline {
           }
         }
         stage('engine-UNIT-plugins') {
+          when {
+            allOf {
+              expression {
+                skipStageType(failedStageTypes, 'engine-unit')
+              }
+              anyOf {
+                branch 'pipeline-master';
+                allOf {
+                  changeRequest();
+                  expression {
+                    withLabels('h2')
+                  }
+                }
+              }
+            }
+          }
           agent {
             kubernetes {
               yaml getAgent('gcr.io/ci-30-162810/centos:v0.4.6', 16)
@@ -505,17 +605,25 @@ pipeline {
           }
         }
         stage('engine-UNIT-database-table-prefix') {
-          agent {
-            kubernetes {
-              yaml getAgent()
-            }
-          }
           when {
-            anyOf {
-              branch 'pipeline-master';
+            allOf {
               expression {
                 skipStageType(failedStageTypes, 'engine-unit')
               }
+              anyOf {
+                branch 'pipeline-master';
+                allOf {
+                  changeRequest();
+                  expression {
+                    withLabels('h2')
+                  }
+                }
+              }
+            }
+          }
+          agent {
+            kubernetes {
+              yaml getAgent()
             }
           }
           steps {
@@ -532,17 +640,25 @@ pipeline {
           }
         }
         stage('webapp-UNIT-database-table-prefix') {
-          agent {
-            kubernetes {
-              yaml getAgent()
-            }
-          }
           when {
-            anyOf {
-              branch 'pipeline-master';
+            allOf {
               expression {
                 skipStageType(failedStageTypes, 'webapps-unit')
               }
+              anyOf {
+                branch 'pipeline-master';
+                allOf {
+                  changeRequest();
+                  expression {
+                    withLabels('h2')
+                  }
+                }
+              }
+            }
+          }
+          agent {
+            kubernetes {
+              yaml getAgent()
             }
           }
           steps {
@@ -561,6 +677,22 @@ pipeline {
           }
         }
         stage('engine-UNIT-wls-compatibility') {
+          when {
+            allOf {
+              expression {
+                skipStageType(failedStageTypes, 'engine-unit')
+              }
+              anyOf {
+                branch 'pipeline-master';
+                allOf {
+                  changeRequest();
+                  expression {
+                    withLabels('h2')
+                  }
+                }
+              }
+            }
+          }
           agent {
             kubernetes {
               yaml getAgent()
@@ -579,7 +711,23 @@ pipeline {
             }
           }
         }
-        stage('IT-wildfly-domain') {
+        stage('engine-IT-wildfly-domain') {
+          when {
+            allOf {
+              expression {
+                skipStageType(failedStageTypes, 'engine-IT-wildfly')
+              }
+              anyOf {
+                branch 'pipeline-master';
+                allOf {
+                  changeRequest();
+                  expression {
+                    withLabels('IT')
+                  }
+                }
+              }
+            }
+          }
           agent {
             kubernetes {
               yaml getAgent()
@@ -598,7 +746,23 @@ pipeline {
             }
           }
         }
-        stage('IT-wildfly-servlet') {
+        stage('engine-IT-wildfly-servlet') {
+          when {
+            allOf {
+              expression {
+                skipStageType(failedStageTypes, 'engine-IT-wildfly')
+              }
+              anyOf {
+                branch 'pipeline-master';
+                allOf {
+                  changeRequest();
+                  expression {
+                    withLabels('IT')
+                  }
+                }
+              }
+            }
+          }
           agent {
             kubernetes {
               yaml getAgent()
@@ -705,21 +869,27 @@ spec:
 }
 
 Map getDbInfo(String databaseLabel) {
-  Map SUPPORTED_DBS = ['postgresql_96': [
-                           type: 'postgresql',
-                           version: '9.6v0.2.2',
-                           profiles: 'postgresql',
-                           extra: ''],
-                       'mariadb_103': [
-                           type: 'mariadb',
-                           version: '10.3v0.3.2',
-                           profiles: 'mariadb',
-                           extra: ''],
-                       'sqlserver_2017': [
-                           type: 'mssql',
-                           version: '2017v0.1.1',
-                           profiles: 'sqlserver',
-                           extra: '-Ddatabase.name=camunda -Ddatabase.username=sa -Ddatabase.password=cam_123$']
+  Map SUPPORTED_DBS = [
+    'h2': [
+      type: 'h2',
+      version: '',
+      profiles: 'h2',
+      extra: ''],
+    'postgresql_96': [
+      type: 'postgresql',
+      version: '9.6v0.2.2',
+      profiles: 'postgresql',
+      extra: ''],
+    'mariadb_103': [
+      type: 'mariadb',
+      version: '10.3v0.3.2',
+      profiles: 'mariadb',
+      extra: ''],
+    'sqlserver_2017': [
+      type: 'mssql',
+      version: '2017v0.1.1',
+      profiles: 'sqlserver',
+      extra: '-Ddatabase.name=camunda -Ddatabase.username=sa -Ddatabase.password=cam_123$']
   ]
 
   return SUPPORTED_DBS[databaseLabel]
@@ -766,7 +936,7 @@ String getMavenProfileDir(String profile) {
 }
 
 void addFailedStageType(List failedStageTypesList, String stageType) {
-  if (!failedStageTypesList.contains(stageType)) failedStageTypesList << 'firstStage'
+  if (!failedStageTypesList.contains(stageType)) failedStageTypesList << stageType
 }
 
 boolean skipStageType(List failedStageTypesList, String stageType) {

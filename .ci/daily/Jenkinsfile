@@ -74,6 +74,8 @@ spec:
   """
 }
 
+def failedStageTypes = []
+
 pipeline {
   agent none
   parameters {
@@ -138,7 +140,7 @@ pipeline {
           steps {
             catchError(stageResult: 'FAILURE') {
               withMaven(jdk: 'jdk-8-latest', maven: 'maven-3.2-latest', mavenSettingsConfig: 'camunda-maven-settings', options: [artifactsPublisher(disabled: true), junitPublisher(disabled: true)]) {
-                runMaven(true, false, false, 'distro/sql-script/', 'install -Pcheck-sql,h2')
+                runMaven(true, false, isQaStashEnabled('check-sql'), getMavenProfileDir('check-sql'), getMavenProfileCmd('check-sql') + getDbProfiles('h2'))
               }
             }
           }
@@ -168,7 +170,7 @@ pipeline {
           steps {
             catchError(stageResult: 'FAILURE') {
               withMaven(jdk: 'jdk-8-latest', maven: 'maven-3.2-latest', mavenSettingsConfig: 'camunda-maven-settings', options: [artifactsPublisher(disabled: true), junitPublisher(disabled: true)]) {
-                runMaven(true, false, false, 'qa/test-db-upgrade/', 'verify -Pupgrade-db,h2')
+                runMaven(true, false, isQaStashEnabled('upgrade-db'), getMavenProfileDir('upgrade-db'), getMavenProfileCmd('upgrade-db') + getDbProfiles('h2'))
               }
             }
           }
@@ -201,7 +203,7 @@ pipeline {
           steps {
             catchError(stageResult: 'FAILURE') {
               withMaven(jdk: 'jdk-8-latest', maven: 'maven-3.2-latest', mavenSettingsConfig: 'camunda-maven-settings', options: [artifactsPublisher(disabled: true), junitPublisher(disabled: true)]) {
-                runMaven(true, false, true, 'qa/test-db-instance-migration/', 'verify -Pinstance-migration,h2')
+                runMaven(true, false, isQaStashEnabled('instance-migration'), getMavenProfileDir('instance-migration'), getMavenProfileCmd('instance-migration') + getDbProfiles('h2'))
               }
             }
           }
@@ -234,7 +236,7 @@ pipeline {
           steps {
             catchError(stageResult: 'FAILURE') {
               withMaven(jdk: 'jdk-8-latest', maven: 'maven-3.2-latest', mavenSettingsConfig: 'camunda-maven-settings', options: [artifactsPublisher(disabled: true), junitPublisher(disabled: true)]) {
-                runMaven(true, false, false, 'qa/', 'verify -Pold-engine,h2')
+                runMaven(true, false, isQaStashEnabled('old-engine'), getMavenProfileDir('old-engine'), getMavenProfileCmd('old-engine') + getDbProfiles('h2'))
               }
             }
           }
@@ -267,7 +269,7 @@ pipeline {
           steps {
             catchError(stageResult: 'FAILURE') {
               withMaven(jdk: 'jdk-8-latest', maven: 'maven-3.2-latest', mavenSettingsConfig: 'camunda-maven-settings', options: [artifactsPublisher(disabled: true), junitPublisher(disabled: true)]) {
-                runMaven(true, false, true, 'qa/test-db-rolling-update/', 'verify -Prolling-update,h2')
+                runMaven(true, false, isQaStashEnabled('rolling-update'), getMavenProfileDir('rolling-update'), getMavenProfileCmd('rolling-update') + getDbProfiles('h2'))
               }
             }
           }
@@ -300,7 +302,7 @@ pipeline {
           steps {
             catchError(stageResult: 'FAILURE') {
               withMaven(jdk: 'jdk-8-latest', maven: 'maven-3.2-latest', mavenSettingsConfig: 'camunda-maven-settings', options: [artifactsPublisher(disabled: true), junitPublisher(disabled: true)]) {
-                runMaven(true, false, false, 'qa/large-data-tests/', 'verify -Plarge-data-tests,h2')
+                runMaven(true, false, isQaStashEnabled('large-data-tests'), getMavenProfileDir('large-data-tests'), getMavenProfileCmd('large-data-tests') + getDbProfiles('h2'))
               }
             }
           }
@@ -327,23 +329,25 @@ pipeline {
             values 'check-sql', 'upgrade-db', 'instance-migration', 'old-engine', 'rolling-update', 'large-data-tests'
           }
         }
-        agent {
-          kubernetes {
-            yaml getDbAgent(env.DB)
-          }
-        }
         when {
-          anyOf {
-            branch 'pipeline-master';
+          allOf {
             expression {
               skipStageType(failedStageTypes, env.PROFILE)
             }
-            allOf {
-              changeRequest();
-//              expression {
-//                withLabels('all-db') || withDbLabel(env.DB)
-//              }
+            anyOf {
+              branch 'pipeline-master';
+              allOf {
+                changeRequest();
+                expression {
+                  withLabels("all-db", getDbType(env.DB))
+                }
+              }
             }
+          }
+        }
+        agent {
+          kubernetes {
+            yaml getDbAgent(env.DB)
           }
         }
         stages {
@@ -444,10 +448,6 @@ void withLabels(String... labels) {
   }
 }
 
-void withDbLabels(String dbLabel) {
-  withLabels(getDbType(dbLabel))
-}
-
 String getDbAgent(String dbLabel, Integer cpuLimit = 4, Integer mavenForkCount = 1){
   Map dbInfo = getDbInfo(dbLabel)
   String mavenMemoryLimit = cpuLimit * 4;
@@ -493,7 +493,13 @@ spec:
 }
 
 Map getDbInfo(String databaseLabel) {
-  Map SUPPORTED_DBS = ['postgresql_96': [
+  Map SUPPORTED_DBS = [
+    'h2': [
+      type: 'h2',
+      version: '',
+      profiles: 'h2',
+      extra: ''],
+    'postgresql_96': [
       type: 'postgresql',
       version: '9.6v0.2.2',
       profiles: 'postgresql',
