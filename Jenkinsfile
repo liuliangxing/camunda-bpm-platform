@@ -39,13 +39,15 @@ spec:
   """
 }
 
-def getWhenBlock = labels -> {
-  anyOf {
-    branch 'pipeline-master';
-    allOf {
-      changeRequest();
-      expression {
-        withLabels(labels)
+def getWhenBlock = {
+  labels -> {
+    anyOf {
+      branch 'pipeline-master';
+      allOf {
+        changeRequest();
+        expression {
+          withLabels(labels)
+        }
       }
     }
   }
