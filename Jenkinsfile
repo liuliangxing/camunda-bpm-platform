@@ -53,6 +53,19 @@ String getWhenBlock(String... labels) {
   }
 }
 
+def whenBlock = {
+  beforeAgent true
+  anyOf {
+    branch 'pipeline-master';
+    allOf {
+      changeRequest();
+      expression {
+        withLabels(labels)
+      }
+    }
+  }
+}
+
 pipeline {
   agent none
   options {
@@ -64,6 +77,7 @@ pipeline {
   }
   stages {
     stage('ASSEMBLY') {
+      when whenBlock
       agent {
         kubernetes {
           yaml getAgent('gcr.io/ci-30-162810/centos:v0.4.6', 16)
@@ -156,7 +170,7 @@ pipeline {
           }
         }
         stage('engine-rest-UNIT-jersey-2') {
-          when getWhenBlock('rest')
+          when whenBlock
           agent {
             kubernetes {
               yaml getAgent()
