@@ -39,6 +39,20 @@ spec:
   """
 }
 
+String getWhenBlock(String... labels) {
+  return {
+    anyOf {
+      branch 'pipeline-master';
+      allOf {
+        changeRequest();
+        expression {
+          withLabels(labels)
+        }
+      }
+    }
+  }
+}
+
 pipeline {
   agent none
   options {
@@ -142,17 +156,7 @@ pipeline {
           }
         }
         stage('engine-rest-UNIT-jersey-2') {
-          when {
-            anyOf {
-              branch 'pipeline-master';
-              allOf {
-                changeRequest();
-                expression {
-                  withLabels('rest')
-                }
-              }
-            }
-          }
+          when getWhenBlock('rest')
           agent {
             kubernetes {
               yaml getAgent()
