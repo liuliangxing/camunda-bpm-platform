@@ -40,14 +40,12 @@ spec:
 }
 
 def getWhenBlock = {
-  labels -> {
-    anyOf {
-      branch 'pipeline-master';
-      allOf {
-        changeRequest();
-        expression {
-          withLabels(labels)
-        }
+  labels -> anyOf {
+    branch 'pipeline-master';
+    allOf {
+      changeRequest();
+      expression {
+        withLabels(labels)
       }
     }
   }
