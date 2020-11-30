@@ -40,14 +40,12 @@ spec:
 }
 
 void getWhenBlock(String... labels) {
-  {
-    anyOf {
-      branch 'pipeline-master';
-      allOf {
-        changeRequest();
-        expression {
-          withLabels(labels)
-        }
+  anyOf {
+    branch 'pipeline-master';
+    allOf {
+      changeRequest();
+      expression {
+        withLabels(labels)
       }
     }
   }
