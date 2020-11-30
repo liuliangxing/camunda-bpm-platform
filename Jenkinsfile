@@ -39,8 +39,8 @@ spec:
   """
 }
 
-String getWhenBlock(String... labels) {
-  return {
+void getWhenBlock(String... labels) {
+  {
     anyOf {
       branch 'pipeline-master';
       allOf {
@@ -48,20 +48,6 @@ String getWhenBlock(String... labels) {
         expression {
           withLabels(labels)
         }
-      }
-    }
-  }
-}
-
-def whenBlock = [:]
-whenBlock["test"] = {
-  beforeAgent true
-  anyOf {
-    branch 'pipeline-master';
-    allOf {
-      changeRequest();
-      expression {
-        withLabels(labels)
       }
     }
   }
@@ -78,7 +64,9 @@ pipeline {
   }
   stages {
     stage('ASSEMBLY') {
-      when whenBlock
+      when {
+        getWhenBlock('rest-api')
+      }
       agent {
         kubernetes {
           yaml getAgent('gcr.io/ci-30-162810/centos:v0.4.6', 16)
