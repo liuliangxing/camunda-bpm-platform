@@ -53,7 +53,8 @@ String getWhenBlock(String... labels) {
   }
 }
 
-def whenBlock = {
+def whenBlock = [:]
+whenBlock["test"] = {
   beforeAgent true
   anyOf {
     branch 'pipeline-master';
