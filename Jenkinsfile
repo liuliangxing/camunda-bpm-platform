@@ -39,7 +39,7 @@ spec:
   """
 }
 
-void getWhenBlock(String... labels) {
+def getWhenBlock = labels -> {
   anyOf {
     branch 'pipeline-master';
     allOf {
