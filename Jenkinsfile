@@ -50,6 +50,16 @@ pipeline {
       string defaultValue: 'pipeline-master', description: 'The name of the EE branch to run the EE pipeline on', name: 'EE_BRANCH_NAME'
   }
   stages {
+    stage('publishChecks') {
+      // agent {
+      //   kubernetes {
+      //     yaml getAgent('gcr.io/ci-30-162810/centos:v0.4.6', 16)
+      //   }
+      // }
+      steps {
+        publishChecks detailsURL: 'https://ci.playground.camunda.cloud/job/cambpm-jenkins-pipelines-daily/', name: 'CheckName', summary: 'CheckSummary', text: 'CheckText', title: 'CheckTitle'
+      }
+    }
     stage('ASSEMBLY') {
       agent {
         kubernetes {
