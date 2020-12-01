@@ -54,7 +54,8 @@ pipeline {
     stage('ASSEMBLY') {
       when {
         expression {
-          return !pullRequest.labels.contains('no-build')
+          return !pullRequest.labels.contains('TODO')
+          //return !pullRequest.labels.contains('no-build')
         }
         beforeAgent true
       }
@@ -122,7 +123,7 @@ pipeline {
         stage('engine-UNIT-h2') {
           when {
             expression {
-              return withLabels('h2')
+              return withLabels('h2', 'rolling-update', 'migration')
             }
             beforeAgent true
           }
@@ -521,7 +522,8 @@ void runMaven(boolean runtimeStash, boolean archivesStash, boolean qaStash, Stri
 }
 
 boolean withLabels(String... labels) {
-  if (pullRequest.labels.contains('no-build')) {
+  if (pullRequest.labels.contains('TODO')) {
+  //if (pullRequest.labels.contains('no-build')) {
     return false;
   }
 

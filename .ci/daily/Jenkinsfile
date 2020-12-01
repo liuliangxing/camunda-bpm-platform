@@ -236,10 +236,10 @@ pipeline {
           anyOf {
             branch 'pipeline-master';
             expression {
-              return withLabels('all-db') || withDbLabel(env.DB) // TODO fix
+              return withLabels(getLabels(env.PROFILE))
             }
-            beforeAgent true
           }
+          beforeAgent true
         }
         agent {
           kubernetes {
@@ -315,9 +315,9 @@ pipeline {
 }
 
 void runMaven(boolean runtimeStash, boolean archivesStash, boolean qaStash, String directory, String cmd, boolean singleThreaded = false) {
-  if (runtimeStash) unstash "platform-stash-runtime"
-  if (archivesStash) unstash "platform-stash-archives"
-  if (qaStash) unstash "platform-stash-qa"
+  if (!params.STANDALONE && runtimeStash) unstash "platform-stash-runtime"
+  if (!params.STANDALONE && archivesStash) unstash "platform-stash-archives"
+  if (!params.STANDALONE && qaStash) unstash "platform-stash-qa"
   String forkCount = singleThreaded? "-DforkCount=1" : '';
   configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
     sh("mvn -s \$MAVEN_SETTINGS_XML ${forkCount} ${cmd} -nsu -Dmaven.repo.local=\${WORKSPACE}/.m2 -B -f ${directory}/pom.xml")
@@ -325,6 +325,11 @@ void runMaven(boolean runtimeStash, boolean archivesStash, boolean qaStash, Stri
 }
 
 void withLabels(String... labels) {
+  if (params.STANDALONE && pullRequest.labels.contains('TODO')) {
+  //if (params.STANDALONE && pullRequest.labels.contains('no-build')) {
+    return false;
+  }
+
   if (env.BRANCH == 'pipeline-master') {
     return true;
   } else if (!params.STANDALONE) {
@@ -430,15 +435,18 @@ String resolveMavenProfileInfo(String profile) {
       'check-sql': [
           directory: 'distro/sql-script/',
           command: 'install -Pcheck-sql,',
-          qaStash: false],
+          qaStash: false,
+          labels: ['all-db','db2','mysql','oracle','mariadb','sqlserver','postgresql']],
      'upgrade-db': [
           directory: 'qa/test-db-upgrade/',
           command: 'verify -Pupgrade-db,',
-          qaStash: false],
+          qaStash: false,
+          labels: ['all-db','db2','mysql','oracle','mariadb','sqlserver','postgresql']],
       'instance-migration': [
           directory: 'qa/test-db-instance-migration/',
           command: 'verify -Pinstance-migration,',
-          qaStash: true],
+          qaStash: true,
+          labels: ''],
       'old-engine': [
           directory: 'qa/',
           command: 'verify -Pold-engine,',
@@ -446,11 +454,13 @@ String resolveMavenProfileInfo(String profile) {
       'rolling-update': [
           directory: 'qa/test-db-rolling-update/',
           command: 'verify -Prolling-update,',
-          qaStash: true],
+          qaStash: true,
+          labels: ''],
       'large-data-tests': [
           directory: 'qa/large-data-tests/',
           command: 'verify -Plarge-data-tests,',
-          qaStash: false]
+          qaStash: false,
+          labels: '']
   ]
 
   return PROFILE_PATHS[profile]
@@ -466,4 +476,8 @@ String getMavenProfileDir(String profile) {
 
 boolean isQaStashEnabled(String profile) {
   return resolveMavenProfileInfo(profile).qaStash
+}
+
+boolean getLabels(String profile) {
+  return resolveMavenProfileInfo(profile).labels
 }
